@@ -35,7 +35,7 @@ def present_user(user):
         'image': user.image
     }
 
-class Users(db.Model):
+class User(db.Model):
     id = db.Column(db.Integer, primary_key=True, unique=True)
     login = db.Column(db.String(80), nullable=False, unique=True)
     email = db.Column(db.String(80), nullable=False, unique=True)
@@ -81,15 +81,15 @@ def add_user():
         return jsonify({'reason': 'Missing name'}), 400
     if not password:
         return jsonify({'reason': 'Missing password'}), 400
-    if Users.query.filter_by(login=login).first():
+    if User.query.filter_by(login=login).first():
         return jsonify({'reason': 'User already exists'}), 409
     if not country:
         return jsonify({'reason': 'Country not found'}), 400
-    if Users.query.filter_by(phone=phone).first():
+    if User.query.filter_by(phone=phone).first():
         return jsonify({'reason': 'User with this phone already exists'}), 409
-    if Users.query.filter_by(email=email).first():
+    if User.query.filter_by(email=email).first():
         return jsonify({'reason': 'User with this email already exists'}), 409
-    user = Users(login=login, email=email, password=password, coutryCode=countryCode, isPublic=isPublic, phone=phone, image=image)
+    user = User(login=login, email=email, password=password, coutryCode=countryCode, isPublic=isPublic, phone=phone, image=image)
     db.session.add(user)
     db.session.commit()
 
