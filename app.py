@@ -1,13 +1,17 @@
 from flask import Flask, request, jsonify
 from flask_migrate import Migrate
 from flask_sqlalchemy import SQLAlchemy
+from flask_bcrypt import Bcrypt
 from sqlalchemy import ForeignKey
+import jwt
+import time
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///cd_collection.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 migrate = Migrate(app, db)
+bcrypt = Bcrypt(app)
 
 class Countries(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True, unique=True)
@@ -89,12 +93,31 @@ def add_user():
         return jsonify({'reason': 'User with this phone already exists'}), 409
     if User.query.filter_by(email=email).first():
         return jsonify({'reason': 'User with this email already exists'}), 409
-    user = User(login=login, email=email, password=password, coutryCode=countryCode, isPublic=isPublic, phone=phone, image=image)
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    user = User(login=login, email=email, password=hashed_password, coutryCode=countryCode, isPublic=isPublic, phone=phone, image=image)
     db.session.add(user)
     db.session.commit()
 
     return jsonify({'porfile':present_user(user)}), 201
 
+@app.route('/auth/sign-in', methods=['POST'])
+def login():
+    data = request.get_json()
+
+    login = data.get('login')
+    password = data.get('password')
+
+    if not login or not password:
+        return jsonify({'error': 'Missing data'}), 400
+
+    user = User.query.filter_by(login=login).first()
+    if not user or not bcrypt.check_password_hash(user.password, password):
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+    token = jwt.encode({'user_id': user.id, 'created_at': int(time.time())}, app.config['SECRET_KEY'],
+                       algorithm='HS256')
+
+    return jsonify({'token': token}), 200
 
 if __name__ == "__main__":
     app.run()
