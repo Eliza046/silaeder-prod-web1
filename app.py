@@ -108,7 +108,7 @@ def login():
     password = data.get('password')
 
     if not login or not password:
-        return jsonify({'error': 'Missing data'}), 400
+        return jsonify({'error': 'Missing data'}), 401
 
     user = User.query.filter_by(login=login).first()
     if not user or not bcrypt.check_password_hash(user.password, password):
@@ -118,6 +118,88 @@ def login():
                        algorithm='HS256')
 
     return jsonify({'token': token}), 200
+
+def requires_user(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+
+        token = request.headers.get('Authorization', '').replace('Bearer ', '')
+
+        if not token:
+            return jsonify({'error': 'Missing token'}), 401
+
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        except Exception as e:
+            return jsonify({'error': 'Invalid token'}), 401
+
+        user_id = payload.get('user_id')
+        created_at = payload.get('created_at')
+
+        if not user_id or not created_at:
+            return jsonify({'error': 'Invalid token'}), 401
+
+        user = User.query.filter_by(id=user_id).first()
+        if not user:
+            return jsonify({'error': 'User not found'}), 401
+
+        if created_at + 60 * 60 * 24 < int(time.time()):
+            return jsonify({'error': 'Token expired'}), 401
+
+        return func(user, *args, **kwargs)
+
+    return wrapper
+
+@app.route('/me/profile', methods=['GET'])
+@requires_user
+def profile():
+    if user.last_generation == int(time.time()):
+        return jsonify({'error': 'Too many request per second'}), 401
+
+    return jsonify({'porfile':present_user(user)}), 200
+
+@app.route('/me/profile', methods=['PATCH'])
+@requires_user
+def redact():
+    user = User.query.filter_by(login=login).first()
+    data = request.get_json()
+
+    if data is None:
+        return jsonify({'reason': 'Invalid JSON format'}), 400
+
+    login = data.get('login', None)
+
+    if login is not None:
+        if login:
+            login=login
+        else:
+            login = user.login
+
+    email = data.get('email')
+    password = data.get('password')
+    isPublic = data.get('isPublic')
+    phone = data.get('phone')
+    image = data.get('image')
+    countryCode = data.get('countryCode')
+    country = Countries.query.filter_by(alpha2=countryCode).first()
+    if not login:
+        return jsonify({'reason': 'Missing name'}), 400
+    if not password:
+        return jsonify({'reason': 'Missing password'}), 400
+    if User.query.filter_by(login=login).first():
+        return jsonify({'reason': 'User already exists'}), 409
+    if not country:
+        return jsonify({'reason': 'Country not found'}), 400
+    if User.query.filter_by(phone=phone).first():
+        return jsonify({'reason': 'User with this phone already exists'}), 409
+    if User.query.filter_by(email=email).first():
+        return jsonify({'reason': 'User with this email already exists'}), 409
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    user = User(login=login, email=email, password=hashed_password, coutryCode=countryCode, isPublic=isPublic, phone=phone, image=image)
+    db.session.add(user)
+    db.session.commit()
+
+    return jsonify({'porfile':present_user(user)}), 201
 
 if __name__ == "__main__":
     app.run()
